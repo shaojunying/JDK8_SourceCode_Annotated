@@ -677,21 +677,32 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
                     continue;                       // spin
 
                 if (h == t || t.isData == isData) { // empty or same-mode
+                    // 队列为空 or 队列中元素和当前元素都是put or 元素都是take
                     QNode tn = t.next;
+
+                    // 下面两个if主要是协助其他线程更新tail
                     if (t != tail)                  // inconsistent read
                         continue;
                     if (tn != null) {               // lagging tail
                         advanceTail(t, tn);
                         continue;
                     }
+
+                    // 队列中没有元素，直接返回null。
+                    // （put和take在接收到null之后，都会触发中断）
                     if (timed && nanos <= 0)        // can't wait
                         return null;
+                    // 将当前元素封装成QNode
                     if (s == null)
                         s = new QNode(e, isData);
+                    // 将当前元素加入队列
                     if (!t.casNext(null, s))        // failed to link in
                         continue;
 
                     advanceTail(t, s);              // swing tail and wait
+                    // 等待有线程与其配对
+                    // 1. 配对成功，则返回被配对的元素
+                    // 2. 配对失败，则返回QNode s
                     Object x = awaitFulfill(s, e, timed, nanos);
                     if (x == s) {                   // wait was cancelled
                         clean(t, s);
@@ -704,23 +715,49 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
                             s.item = s;
                         s.waiter = null;
                     }
+                    // 1. put的话，成功配对之后，x将为null，于是返回参数中的元素e
+                    // 2. take的话，成功配对之后，x将为e，于是返回e
+                    // 这里会避免返回null，因为null将代表该操作没有正常结束
                     return (x != null) ? (E)x : e;
 
                 } else {                            // complementary-mode
+                    // 队列中有元素，且当前元素和队列中元素是put and take
                     QNode m = h.next;               // node to fulfill
                     if (t != tail || m == null || h != head)
                         continue;                   // inconsistent read
 
+                    // m：要配对的节点
+                    // x：要配对节点的元素
                     Object x = m.item;
                     if (isData == (x != null) ||    // m already fulfilled
                         x == m ||                   // m cancelled
                         !m.casItem(x, e)) {         // lost CAS
                         advanceHead(h, m);          // dequeue and retry
+                        // isData == (x != null)：检查当前操作与节点状态是否匹配以确认是否成功配对。
+                        // 对于put操作（isData为true），如果节点item为空（x == null），表示节点已传递数据并被take操作消费。
+                        // 对于take操作（isData为false），如果节点item非空（x != null），表示节点已接收到put操作提供的数据。
+                        // 如果这些条件不匹配，表示节点尚未被正确配对或操作未完成。
+
+                        // x == m：检查节点是否已取消。如果节点已取消，忽略这个节点
+
+                        // m.casItem(x, e)：尝试将节点的item字段从x设置为e。
+                        // 如果失败，表示节点已被其他线程取消或已被其他线程完成。
+
+                        // 命中上面三个条件中的一个，表示当前节点未被正确配对或操作未完成，需要重新进行for循环
                         continue;
                     }
 
+                    // 到这里说明成功配对了
+
+                    // 1. 将头节点指向下一个节点
+                    // 2. 唤醒m上等待的线程
                     advanceHead(h, m);              // successfully fulfilled
                     LockSupport.unpark(m.waiter);
+
+                    // x表示配对节点中的元素
+                    // 1. put的话，x将为null，于是返回参数中的元素e
+                    // 2. take的话，x将为e，于是返回e
+                    // 这里会避免返回null，因为null将代表该操作没有正常结束
                     return (x != null) ? (E)x : e;
                 }
             }
@@ -737,11 +774,14 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
          */
         Object awaitFulfill(QNode s, E e, boolean timed, long nanos) {
             /* Same idea as TransferStack.awaitFulfill */
+            // 判断是否超时
             final long deadline = timed ? System.nanoTime() + nanos : 0L;
             Thread w = Thread.currentThread();
+            // 自旋次数
             int spins = ((head.next == s) ?
                          (timed ? maxTimedSpins : maxUntimedSpins) : 0);
             for (;;) {
+                // 如果当前线程被中断，取消节点
                 if (w.isInterrupted())
                     s.tryCancel(e);
                 Object x = s.item;
