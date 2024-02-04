@@ -234,6 +234,10 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
             volatile SNode match;       // the node matched to this
             volatile Thread waiter;     // to control park/unpark
             Object item;                // data; or null for REQUESTs
+            // 原来的isData字段被替换成了mode字段
+            // 0（REQUEST）：表示当前节点是一个消费者，等待生产者提供数据
+            // 1（DATA）：表示当前节点是一个生产者，等待消费者消费数据
+            // 2（FULFILLING）：表示当前节点正在配对其他节点
             int mode;
             // Note: item and mode fields don't need to be volatile
             // since they are always written before, and read after,
@@ -323,6 +327,10 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
 
         /**
          * Puts or takes an item.
+         * 参考
+         * <a href="https://juejin.cn/post/6942476809472573453">
+         *     SynchronousQueue之TransferStack源码分析
+         * </a>
          */
         @SuppressWarnings("unchecked")
         E transfer(E e, boolean timed, long nanos) {
@@ -348,54 +356,100 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
              */
 
             SNode s = null; // constructed/reused as needed
+            // 确定当前节点准备消费数据 or 生产数据
             int mode = (e == null) ? REQUEST : DATA;
 
             for (;;) {
+                // 这里的head不是一个哑节点
                 SNode h = head;
                 if (h == null || h.mode == mode) {  // empty or same-mode
+                    // 进入这里，说明栈为空 or 栈中元素和当前元素都是put or 元素都是take
+                    // 于是当前元素需要加入队列
                     if (timed && nanos <= 0) {      // can't wait
+                        // 如果不能直接匹配上，应该直接返回的
+                        // 但是这里可能是因为栈中有cancelled的节点，所以需要清理一下，再重新判断
                         if (h != null && h.isCancelled())
                             casHead(h, h.next);     // pop cancelled node
                         else
                             return null;
                     } else if (casHead(h, s = snode(s, e, h, mode))) {
+                        // 成功将head更新为s
+                        // 更新之后的栈为：s(head) -> h
                         SNode m = awaitFulfill(s, timed, nanos);
                         if (m == s) {               // wait was cancelled
+                            // s被取消了，清理，并删除
                             clean(s);
                             return null;
                         }
                         if ((h = head) != null && h.next == s)
                             casHead(h, s.next);     // help s's fulfiller
+                        // put时返回配对的元素
+                        // take时返回参数中的元素
                         return (E) ((mode == REQUEST) ? m.item : s.item);
                     }
                 } else if (!isFulfilling(h.mode)) { // try to fulfill
+                    // 上面的if没有满足，则说明要插入节点的mode和head的mode互补
+
+                    // 没有被匹配上，尝试匹配
                     if (h.isCancelled())            // already cancelled
                         casHead(h, h.next);         // pop and retry
                     else if (casHead(h, s=snode(s, e, h, FULFILLING|mode))) {
+                        // 进入这里说明正在进行匹配中
+                        // 进入循环，直到匹配成功
                         for (;;) { // loop until matched or waiters disappear
+                            // 这里的语义就是，如果节点s是Fulfilling节点，那么s.next就是s的匹配节点
                             SNode m = s.next;       // m is s's match
+                            // 如果m == null，说明后面没有任何节点了，
                             if (m == null) {        // all waiters are gone
+                                // 清理栈中所有元素，进入下一次大循环
+                                // 下次循环将会把s插入到栈中，等待被匹配
                                 casHead(s, null);   // pop fulfill node
                                 s = null;           // use new node next time
                                 break;              // restart main loop
                             }
+                            // 到这里说明可以从栈中取出一个元素，尝试匹配
                             SNode mn = m.next;
                             if (m.tryMatch(s)) {
+                                // 匹配成功，更新head为mn
+                                // 原来的栈为：s -> m -> mn
+                                // 之后s和m匹配成功
+                                // 更新之后的栈为：mn
                                 casHead(s, mn);     // pop both s and m
                                 return (E) ((mode == REQUEST) ? m.item : s.item);
                             } else                  // lost match
+                                // s与m匹配失败，说明m已经被其他线程匹配了
+                                // 于是更新s的next为mn
+                                // 更新前的栈为：s -> m -> mn
+                                // 之后的栈为：s -> mn
                                 s.casNext(m, mn);   // help unlink
                         }
                     }
+                    // 没有成功匹配上，继续循环
                 } else {                            // help a fulfiller
+                    // 这里发现head节点正在进行匹配，这里帮助head完成else if里面的匹配，
+                    // 但是这个线程不能返回，只能由head对应的线程返回
                     SNode m = h.next;               // m is h's match
+                    // h：head节点，等待被匹配
+                    // m：head节点的匹配节点
                     if (m == null)                  // waiter is gone
+                        // head后面已经没有节点了，直接清理栈中的所有元素，进入下一次大循环
                         casHead(h, null);           // pop fulfilling node
                     else {
+                        // m不为空，尝试匹配
                         SNode mn = m.next;
                         if (m.tryMatch(h))          // help match
+                            // 匹配成功，将head更新为mn
+                            // 匹配成功的h、m已经被移出栈了
+                            // 为什么这里不返回，退出函数呢
+                            // 因为这里的线程不是head对应的线程，所以不能返回
+
+                            // 我们在帮助head时，head对应的线程仍然在else if的for(;;)循环中
+                            // 这里成功帮助head匹配之后，原来的栈为：h -> m -> mn
+                            // 之后的栈为：mn，但是h开头的链接变成了h -> m -> null
+                            // 因此在我们帮助之后，head线程就可以直接拿到与其匹配的节点m了
                             casHead(h, mn);         // pop both h and m
                         else                        // lost match
+                            // 匹配失败，删除m，栈从h -> m -> mn 变为 h -> mn
                             h.casNext(m, mn);       // help unlink
                     }
                 }
@@ -440,12 +494,17 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
             for (;;) {
                 if (w.isInterrupted())
                     s.tryCancel();
+                // m: s的匹配节点
                 SNode m = s.match;
                 if (m != null)
+                    // 已经匹配到了，直接返回即可
+                    // m可能为s，表示s已经被取消
+                    // m可能为其他节点，表示s已经被匹配
                     return m;
                 if (timed) {
                     nanos = deadline - System.nanoTime();
                     if (nanos <= 0L) {
+                        // 将match更新为s，表示s已经被取消
                         s.tryCancel();
                         continue;
                     }
