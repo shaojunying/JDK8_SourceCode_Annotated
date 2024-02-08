@@ -170,6 +170,16 @@ public class LockSupport {
      * @since 1.6
      */
     public static void park(Object blocker) {
+        // park和wait比较类似，都会使当前线程进入等待状态
+        // 区别就是：
+        // 1. 锁的需求和调用灵活性：park不需要获取锁，可以直接调用，更加灵活，
+        //    而wait必须在Synchronized方法块中，获取锁才能调用；
+        // 2. 调用顺序的差异：unpark可以先于park调用，此时park被调用后将会直接返回，而notify必须在wait之后调用
+        // 3. wait的调用必须在synchronized块中，而park可以在任何地方调用。
+        // 4. 内存可见性保证：当线程调用wait方法时，会释放锁。而线程在被notify唤醒之后，
+        //    从wait方法返回之前，会重新获取锁，在这个过程中，
+        //    JMM保证了监视器释放时可见的所有变量对于重新获取锁的线程是可见的。park需要结合volatile变量使用
+
         Thread t = Thread.currentThread();
         setBlocker(t, blocker);
         UNSAFE.park(false, 0L);

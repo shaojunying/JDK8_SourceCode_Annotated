@@ -173,6 +173,7 @@ import java.util.Queue;
  * <a href="{@docRoot}/../technotes/guides/collections/index.html">
  * Java Collections Framework</a>.
  *
+ * 一个Queue，和普通的区别是支持阻塞操作，可以阻塞put和take操作
  * @since 1.5
  * @author Doug Lea
  * @param <E> the type of elements held in this collection

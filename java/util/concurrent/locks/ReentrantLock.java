@@ -152,7 +152,9 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             int c = getState() - releases;
             if (Thread.currentThread() != getExclusiveOwnerThread())
                 throw new IllegalMonitorStateException();
+            // 是否完全是否锁
             boolean free = false;
+            // 如果state为0，表示锁已经完全释放
             if (c == 0) {
                 free = true;
                 setExclusiveOwnerThread(null);
@@ -225,25 +227,38 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         private static final long serialVersionUID = -3000897897090466540L;
 
         final void lock() {
+            // 直接调用父类的父类（AQS）的acquire方法
             acquire(1);
         }
 
         /**
          * Fair version of tryAcquire.  Don't grant access unless
          * recursive call or no waiters or is first.
+         * return 标识是否成功获取锁
          */
         @ReservedStackAccess
         protected final boolean tryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
             int c = getState();
             if (c == 0) {
+                // 没有线程持有锁
                 if (!hasQueuedPredecessors() &&
                     compareAndSetState(0, acquires)) {
+                    // hasQueuedPredecessors：true将表示队列中有其他线程在等待锁
+                    // hasQueuedPredecessors：false的话，队列为空 or 阻塞队列中第一个线程是当前线程
+                    // --> 就应该让当前线程去直接竞争锁
+
+                    // compareAndSetState(0, acquires)：
+                    // CAS操作，如果当前state为0，就将state设置为acquires，表示抢锁成功
+
+                    // 设置当前线程为独占线程，之后的操作都是针对这个线程的
                     setExclusiveOwnerThread(current);
                     return true;
                 }
+                // 进入这里的话，说明tryAcquire失败，需要进入阻塞队列
             }
             else if (current == getExclusiveOwnerThread()) {
+                // 支持重入，主要就是检查exclusiveOwnerThread、更新state
                 int nextc = c + acquires;
                 if (nextc < 0)
                     throw new Error("Maximum lock count exceeded");
@@ -259,6 +274,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * This is equivalent to using {@code ReentrantLock(false)}.
      */
     public ReentrantLock() {
+        // 默认非公平锁
         sync = new NonfairSync();
     }
 
