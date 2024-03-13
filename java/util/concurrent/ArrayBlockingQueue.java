@@ -91,15 +91,19 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
     private static final long serialVersionUID = -817911632652898426L;
 
     /** The queued items */
+    // 存放元素的数组
     final Object[] items;
 
     /** items index for next take, poll, peek or remove */
+    // 下一次take元素的位置
     int takeIndex;
 
     /** items index for next put, offer, or add */
+    // 下一次put元素的位置
     int putIndex;
 
     /** Number of elements in the queue */
+    // 队列中的元素数量
     int count;
 
     /*
@@ -162,6 +166,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         if (++putIndex == items.length)
             putIndex = 0;
         count++;
+        // 唤醒等待在NotEmpty条件队列上的第一个线程
         notEmpty.signal();
     }
 
@@ -264,11 +269,14 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      * elements of the given collection,
      * added in traversal order of the collection's iterator.
      *
-     * @param capacity the capacity of this queue
-     * @param fair if {@code true} then queue accesses for threads blocked
+     * @param capacity 队列容量 the capacity of this queue
+     * @param fair true：阻塞在队列上的线程被按照FIFO的方式处理
+     *             false：队列上的线程被处理的次序是不确定的
+     *        if {@code true} then queue accesses for threads blocked
      *        on insertion or removal, are processed in FIFO order;
      *        if {@code false} the access order is unspecified.
-     * @param c the collection of elements to initially contain
+     * @param c 用于初始化队列的集合
+     *         the collection of elements to initially contain
      * @throws IllegalArgumentException if {@code capacity} is less than
      *         {@code c.size()}, or less than 1.
      * @throws NullPointerException if the specified collection or any
@@ -350,6 +358,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         lock.lockInterruptibly();
         try {
             while (count == items.length)
+                // 队列满了，进入NotFull条件队列等待
                 notFull.await();
             enqueue(e);
         } finally {

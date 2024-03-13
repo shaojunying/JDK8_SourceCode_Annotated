@@ -239,6 +239,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         @ReservedStackAccess
         protected final boolean tryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
+            // c表示当前锁的状态，0表示没有线程持有锁，1表示有线程持有锁。这个方法就是尝试将锁的状态从0改为1
             int c = getState();
             if (c == 0) {
                 // 没有线程持有锁
@@ -260,8 +261,10 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             else if (current == getExclusiveOwnerThread()) {
                 // 支持重入，主要就是检查exclusiveOwnerThread、更新state
                 int nextc = c + acquires;
+                // nextc < 0 表示锁的状态溢出了，抛出异常
                 if (nextc < 0)
                     throw new Error("Maximum lock count exceeded");
+                // 更新锁的状态
                 setState(nextc);
                 return true;
             }

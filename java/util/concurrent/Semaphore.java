@@ -309,6 +309,7 @@ public class Semaphore implements java.io.Serializable {
      * @throws InterruptedException if the current thread is interrupted
      */
     public void acquire() throws InterruptedException {
+        // 获取一个许可证
         sync.acquireSharedInterruptibly(1);
     }
 
