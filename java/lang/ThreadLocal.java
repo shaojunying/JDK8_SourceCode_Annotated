@@ -306,6 +306,7 @@ public class ThreadLocal<T> {
          * as "stale entries" in the code that follows.
          */
         static class Entry extends WeakReference<ThreadLocal<?>> {
+            // key使用的是弱引用，但是value是强饮用
             /** The value associated with this ThreadLocal. */
             Object value;
 
