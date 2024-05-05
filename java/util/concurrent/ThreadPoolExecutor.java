@@ -621,6 +621,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
 
         /** Delegates main run loop to outer runWorker  */
         public void run() {
+            // 线程池中的每个线程都会执行这个函数
             runWorker(this);
         }
 
@@ -1059,11 +1060,15 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             int wc = workerCountOf(c);
 
             // Are workers subject to culling?
+            // 是否需要定时
+            // 1. 允许核心线程超时，则需要计时
+            // 2. 当前存活的线程数量 > 允许的核心线程数
             boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
 
             if ((wc > maximumPoolSize || (timed && timedOut))
                 && (wc > 1 || workQueue.isEmpty())) {
                 if (compareAndDecrementWorkerCount(c))
+                    // 这里的CAS如果成功，则说明没有其他线程准备终止
                     return null;
                 continue;
             }
@@ -1132,6 +1137,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         boolean completedAbruptly = true;
         try {
             while (task != null || (task = getTask()) != null) {
+                // 获取到了下一个要被运行的任务；或者getTask超时了
                 w.lock();
                 // If pool is stopping, ensure thread is interrupted;
                 // if not, ensure thread is not interrupted.  This
@@ -1146,6 +1152,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     beforeExecute(wt, task);
                     Throwable thrown = null;
                     try {
+                        // 调用runnable的run方法，执行具体的逻辑
                         task.run();
                     } catch (RuntimeException x) {
                         thrown = x; throw x;
