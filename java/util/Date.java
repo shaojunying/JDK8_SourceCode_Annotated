@@ -135,6 +135,8 @@ public class Date
                                 CalendarSystem.getGregorianCalendar();
     private static BaseCalendar jcal;
 
+    // 唯一的用于存储数据的数据
+    // 存储1970-01-01 00:00:00到当前时间的毫秒数
     private transient long fastTime;
 
     /*

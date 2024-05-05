@@ -102,6 +102,9 @@ import java.time.zone.ZoneRules;
 import java.util.Objects;
 
 /**
+ * 一个很简单的类，只包含了三个final变量：year、month、day
+ * 这是一个不可变类，因此是线程安全的。
+ *
  * A date without a time-zone in the ISO-8601 calendar system,
  * such as {@code 2007-12-03}.
  * <p>
