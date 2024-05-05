@@ -1741,11 +1741,14 @@ class Thread implements Runnable {
      */
     public enum State {
         /**
+         *
+         * 一个线程已被创建，但是start函数还没有被调用
          * Thread state for a thread which has not yet started.
          */
         NEW,
 
         /**
+         * JVM正在执行，但是它可能等到操作系统的其他资源，比如处理器、IO。
          * Thread state for a runnable thread.  A thread in the runnable
          * state is executing in the Java virtual machine but it may
          * be waiting for other resources from the operating system
@@ -1754,15 +1757,33 @@ class Thread implements Runnable {
         RUNNABLE,
 
         /**
+         * 线程被blocked，正在等待monitor锁，从而
+         * 1. 第一次进入被synchronized修饰的块/方法中, 但竞争monitor 锁失败；
+         * 2. 或者被Wait调用之后，尝试重新进入synchronized 块/方法，竞争Monitor锁失败，
+         *
+         * 梳理一次wait调用流程：
+         * 1. 线程尝试进入一段synchronized 块；
+         * 2.1 线程没有抢到monitor锁，进入block状态。对应情况1.
+         * 2.2 线程成功抢到monitor锁，则继续向下执行。
+         * 3. 线程继续往下执行，需要调用wait方法，等待某个条件满足。线程进入Waiting状态
+         * 4. 另一个线程调用了signalAll方法，当前线程被唤醒。
+         * 5.1 当前线程被唤醒之后需要重新竞争Monitor锁，竞争锁失败，则进入Blocked状态。对应情况2
+         * 5.2 线程成功竞争到锁,则继续向下执行
+         *
          * Thread state for a thread blocked waiting for a monitor lock.
          * A thread in the blocked state is waiting for a monitor lock
          * to enter a synchronized block/method or
          * reenter a synchronized block/method after calling
          * {@link Object#wait() Object.wait}.
          */
+
         BLOCKED,
 
         /**
+         * Waiting 状态的线程正在等待另一个线程执行一个特定操作:
+         * 1. 不带超时时间地调用 wait 方法. (等待另一个线程调用 notify / notifyAll)
+         * 2. 不带超时时间地调用 join 方法. (等待另一个线程终止)
+         * 3. 调用LockSupport.park方法. (等待另一个线程调用unpark(Thread)方法)
          * Thread state for a waiting thread.
          * A thread is in the waiting state due to calling one of the
          * following methods:
@@ -1784,6 +1805,13 @@ class Thread implements Runnable {
         WAITING,
 
         /**
+         * 带有最大等待时间的 Waiting 线程
+         * 1. sleep 方法
+         * 2. wait(long)
+         * 3. join(long)
+         * 4. LockSupport.parkNanos(). 挂起线程, 直到被唤醒或超时, 单位为纳秒.
+         * 5. LockSupport.parkUtil(). 挂起线程, 直到被唤醒或超时, 参数为绝对时间.
+         *
          * Thread state for a waiting thread with a specified waiting time.
          * A thread is in the timed waiting state due to calling one of
          * the following methods with a specified positive waiting time:
@@ -1798,6 +1826,7 @@ class Thread implements Runnable {
         TIMED_WAITING,
 
         /**
+         * 线程已经完成了执行
          * Thread state for a terminated thread.
          * The thread has completed execution.
          */
